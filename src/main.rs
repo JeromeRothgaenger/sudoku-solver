@@ -3,6 +3,10 @@
 use std::{time::Instant};
 use std::io;
 
+use rayon::iter::ParallelIterator;
+use rayon::slice::ParallelSliceMut;
+
+use crate::checker::check_correct;
 use crate::init::{load, store};
 
 
@@ -22,26 +26,34 @@ const PUZZEL_AMOUNT: usize = 49153;
 
 
 
-/*
+
 fn main() {
  
     let start = Instant::now();
     let mut sudokus = load(INPUT_PATH);
 
-    for sudoku in sudokus.iter_mut() {
-        solver::solve( sudoku);
-    }
+    sudokus.par_chunks_mut(256).for_each(|chunk| {
+        for sudoku in chunk {
+            solver::solve(sudoku);
+        }
+    });
 
     store(OUTPUT_PATH, &sudokus);
-
     let duration = start.elapsed().as_micros();
-    println!("Time elapsed: {:?}s, avg time: {}mus", duration/1000000, duration/ PUZZEL_AMOUNT as u128);
-    //println!("total:{}; false: {}; false %: {}", PUZZEL_AMOUNT, num_false, (num_false as f32/PUZZEL_AMOUNT as f32)*100 as f32);
-    //println!("Maximum iterations: {}", max_used_iterations);
+
+    for sudoku in sudokus {
+        if !check_correct(&sudoku) {
+            panic!("sudoku wrong :(")
+        }
+    }
+
+    println!("Time elapsed: {:?}ms, avg time: {}mus", duration as f64/1000 as f64, duration/ PUZZEL_AMOUNT as u128);
+  
 }
 
-*/
 
+
+/*
 const BENCHMARK_MULTIPLIER: usize = 50;
 
 //benchmark
@@ -59,4 +71,4 @@ fn main() {
     let duration = start.elapsed().as_micros();
     println!("Time elapsed: {:?}s, avg time: {}mus", duration/1000000, duration/(PUZZEL_AMOUNT * BENCHMARK_MULTIPLIER) as u128);
 }
-
+*/

@@ -177,7 +177,7 @@ fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
     let mut changed = false;
     for index in 0..81 {
         if state[index] < CHECKING_NUM {
-            if helper::is_single(state[index]) {
+            if state[index].count_ones() == 1 {
                 lock_field(state, index);
                 changed = true
             }

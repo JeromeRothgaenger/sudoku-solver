@@ -46,10 +46,6 @@ pub(crate) fn remove_candidate(candidates: &mut [u16; 81], index: usize, mask: u
     candidates[index] &= !mask;
 }
 
-#[inline]
-pub(crate) fn is_single(x: u16) -> bool {
-    x != 0 && x & (x - 1) == 0
-}
 
 
 /*
