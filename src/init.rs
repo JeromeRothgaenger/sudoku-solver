@@ -1,22 +1,83 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use::std::fs;
+use std::{fs::File, io::{BufWriter, Write}};
 
-use crate::helper;
+use crate::helper::{CHECKING_NUM, PEERS};
 
-pub(crate) fn read_sudoku(num: usize) -> [u16; 81] {
-    let file = File::open("all_17_clue_sudokus.txt").expect("Could not open file");
-    let line = BufReader::new(file)
-        .lines()
-        .nth(num)
-        .expect("No such line")
-        .expect("Could not read line");
+const LINE_SIZE: usize = 82;
+const FIXED_FLAG: u16 = 0b100_0000_0000;
+const CAND_ALL: u16 = 0b011_1111_1110;
 
-    let mut state = [0b_011_1111_1110; 81];
-    for (i, c) in line.chars().enumerate() {
-        if c != '0' {
-            helper::set_field(&mut state, i, 1 << (c as u8 - b'0'));
+const BYTE_LOOKUP: [u16; 256] = {                    //absolute abomination but very butiful in its unique way
+    let mut t = [CAND_ALL; 256];
+    let mut d: u8 = 1;
+    while d <= 9 {
+        t[(b'0' + d) as usize] = FIXED_FLAG | (1u16 << d);
+        d += 1;
+    }
+    t
+};
+
+const CHARACTER_LOOKUP: [u8; 512] = {
+    let mut t = [b'0'; 512];          // Standard: keine eindeutige Ziffer
+    let mut d: u8 = 1;
+    while d <= 9 {
+        t[(1usize << d) & 511] = b'0' + d;
+        d += 1;
+    }
+    t
+};
+
+
+
+
+#[inline]
+fn parse_line(line: &[u8; 81]) -> [u16; 81] {
+    let mut out = [CAND_ALL; 81];
+    for i in 0..81 {
+        let cell = BYTE_LOOKUP[line[i] as usize];
+        if cell >= CHECKING_NUM {
+            out[i] = cell;
+            let mask = !cell | FIXED_FLAG;
+            for peer_index in PEERS[i] {
+                out[peer_index as usize] &= mask; 
+            }
         }
     }
-
-    state
+    out
 }
+
+
+pub(crate) fn load(path: &str) -> Vec<[u16; 81]> {
+    let bytes = fs::read(path).expect("Datei konnte nicht gelesen werden");
+    let ind_of_first_nl = bytes.iter().position(|&b| b == b'\n').expect("found first newLine");
+
+    let body = &bytes[&ind_of_first_nl+1..];
+    
+    body.chunks_exact(LINE_SIZE)
+        .map(|chunk| {
+            let line = chunk.first_chunk::<81>().unwrap();
+            return parse_line(line)
+        })
+    .collect()
+}
+
+
+
+pub(crate) fn store(path: &str, sudokus: &[[u16; 81]]) {
+    let mut out = Vec::with_capacity(16 + sudokus.len() * LINE_SIZE);
+
+    out.extend_from_slice(sudokus.len().to_string().as_bytes());
+    out.push(b'\n');
+
+    for sudoku in sudokus {
+        for cell in sudoku {
+            out.push(CHARACTER_LOOKUP[(cell & CAND_ALL) as usize & 511]);
+        }
+        out.push(b'\n');
+    }
+
+    let mut file = BufWriter::new(
+        File::create(path).expect("Datei konnte nicht erstellt werden"));
+    file.write_all(&out).expect("Schreiben fehlgeschlagen");
+    file.flush().expect("Flush fehlgeschlagen");
+} 

@@ -2,13 +2,15 @@ use crate::checker::check_conflict;
 use crate::display::display_candidates;
 use crate::helper;
 use crate::checker;
+use crate::helper::ALL_UNITS;
+use crate::helper::CHECKING_NUM;
+use crate::helper::lock_field;
 
 const MAX_ITERATIONS: i16 = 100;
 
 
 pub(crate) fn solve(state: &mut [u16; 81]) -> i16 {
     let mut iteration :i16 = 0;
-
     let mut result = 0;
 
     while !checker::check_finish(state) && iteration < MAX_ITERATIONS {
@@ -82,18 +84,18 @@ fn solve_without_guesser(state: &mut [u16; 81]) -> i16 {
 fn solve_orphan_prisoners(state: &mut [u16; 81]) -> bool {
     let mut changed = false;
     // rows
-    for row in 0usize..9usize {
+    for unit in ALL_UNITS {
         let mut appeared_once_buffer: u16 = 0b_00_0000_0000;
         let mut appeared_multiple_buffer: u16 = 0b_00_0000_0000;
         
-        for index in helper::ROW_LIST[row] {
+        for index in unit {
             let field: u16 = state[index];
             if field < helper::CHECKING_NUM { // Prüfbit nicht gesetzt --> noch keine eingetragene lösung
                 appeared_multiple_buffer |= appeared_once_buffer & field;
                 appeared_once_buffer |= field;
 
                 if field.count_ones() == 1 { // Prüfbit nicht gesetzt --> noch keine eingetragene lösung
-                    helper::set_field(state, index, state[index]);
+                    helper::lock_field(state, index);
                     changed = true;
                 }
             }
@@ -101,7 +103,7 @@ fn solve_orphan_prisoners(state: &mut [u16; 81]) -> bool {
 
         let only_once_mask = appeared_once_buffer & !appeared_multiple_buffer;
 
-        for index in helper::ROW_LIST[row] {
+        for index in unit {
             let field: u16 = state[index];
             if (field&only_once_mask).count_ones() == 1 { 
                 helper::set_field(state, index, field&only_once_mask);
@@ -109,52 +111,7 @@ fn solve_orphan_prisoners(state: &mut [u16; 81]) -> bool {
             }
         }
     }
-    // cols
-    for col in 0usize..9usize {
-        let mut appeared_once_buffer: u16 = 0b_00_0000_0000;
-        let mut appeared_multiple_buffer: u16 = 0b_00_0000_0000;
-        
-        for index in helper::COL_LIST[col] {
-            let field: u16 = state[index];
-            if field < helper::CHECKING_NUM { // Prüfbit nicht gesetzt --> noch keine eingetragene lösung
-                appeared_multiple_buffer |= appeared_once_buffer & field;
-                appeared_once_buffer |= field;
-            }
-        }
-
-        let only_once_mask = appeared_once_buffer & !appeared_multiple_buffer;
-
-        for index in helper::COL_LIST[col] {
-            let field: u16 = state[index];
-            if (field&only_once_mask).count_ones() == 1 { 
-                helper::set_field(state, index, field&only_once_mask);
-                changed = true;
-            }
-        }
-    }
-    // blks
-    for blk in 0usize..9usize {
-        let mut appeared_once_buffer: u16 = 0b_00_0000_0000;
-        let mut appeared_multiple_buffer: u16 = 0b_00_0000_0000;
-        
-        for index in helper::BLK_LIST[blk] {
-            let field: u16 = state[index];
-            if field < helper::CHECKING_NUM { // Prüfbit nicht gesetzt --> noch keine eingetragene lösung
-                appeared_multiple_buffer |= appeared_once_buffer & field;
-                appeared_once_buffer |= field;
-            }
-        }
-
-        let only_once_mask = appeared_once_buffer & !appeared_multiple_buffer;
-
-        for index in helper::BLK_LIST[blk] {
-            let field: u16 = state[index];
-            if (field&only_once_mask).count_ones() == 1 { 
-                helper::set_field(state, index, field&only_once_mask);
-                changed = true;
-            }
-        }
-    }
+    
     changed
 }
 
@@ -215,72 +172,24 @@ fn elimnate_outsiders(state: &mut [u16; 81]) -> bool{
 }
 
 
-fn eliminate_pagans_structure (state: &mut [u16; 81], coord_list: [[usize; 9]; 9]) -> bool {
-    let mut changed = false;
-    for i in 0..9 {
-        let struct_coords = coord_list[i];
-        let mut skip_fileds_list: Vec<usize> = vec![];
-        let struct_candidates: Vec<u16> = struct_coords.iter().map(|&i| state[i]).collect();
-
-
-        // add set fields to skip list
-        for (field_index, field) in struct_candidates.iter().enumerate() {
-            if *field > helper::CHECKING_NUM {
-                skip_fileds_list.push(field_index);
-            }
-        }
-        // iterate start positions
-        for start_field in 0..9 {
-            // skip already checked fields
-            if !skip_fileds_list.contains(&start_field) {
-                skip_fileds_list.push(start_field);
-                let mut candidate_combination = struct_candidates[start_field];
-                let mut index = start_field;
-                let mut combined_fields_list: Vec<usize> = vec![start_field];
-
-                // create combintions
-                while skip_fileds_list.len() < 9 && index <= 8 {
-                    if skip_fileds_list.contains(&index) {
-                        index += 1;
-                        continue;
-                    }
-                    let tmp_combination = candidate_combination | struct_candidates[index];
-                    // combine
-                    if (tmp_combination ^ candidate_combination).count_ones() <= 1 {
-                        candidate_combination = tmp_combination;
-                        skip_fileds_list.push(index);
-                        combined_fields_list.push(index);
-                        index = start_field; // optimierbar
-                    } else {
-                        index += 1;
-                    }
-                }
-                if candidate_combination.count_ones() <= combined_fields_list.len() as u32 {
-                    // iterate fields not contained in group
-                    for field_index in 0..9 {
-                        let global_index = struct_coords[field_index];
-                        if !combined_fields_list.contains(&field_index) && state[global_index] & candidate_combination != 0 {
-                            state[global_index] = (state[global_index] | candidate_combination)^candidate_combination;
-                            changed = true;
-                        }
-                    }
-                }
-            }
-
-        }
-    }
-    changed
-}
 
 fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
     let mut changed = false;
-
-    changed |= eliminate_pagans_structure(state, helper::ROW_LIST);
-    changed |= eliminate_pagans_structure(state, helper::COL_LIST);
-    changed |= eliminate_pagans_structure(state, helper::BLK_LIST);
+    for index in 0..81 {
+        if state[index] < CHECKING_NUM {
+            if helper::is_single(state[index]) {
+                lock_field(state, index);
+                changed = true
+            }
+        }
+    }
 
     changed
 }
+
+
+
+
 
 const MASK: u16 = 0x03FE; // 0b0000_0011_1111_1110
 const NUM_COLS: usize = 9;
@@ -300,6 +209,7 @@ fn read_vertically_u16(words: &[u16]) -> [u16; NUM_COLS] {
     }
     cols
 }
+
 
 fn eliminate_foreigners_structure(state: &mut [u16; 81], coord_list: [[usize; 9]; 9]) -> bool {
     let mut changed = false;
