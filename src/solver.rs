@@ -23,9 +23,9 @@ pub(crate) fn solve(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
             set_count += changed;
             continue;
         }
-        // if eliminate_pagans(&mut state.0) {continue;}
         if elimnate_outsiders(&mut state) {continue;}
-        if eliminate_foreigners(&mut state) {continue;}
+        // if eliminate_pagans(&mut state) {continue;}
+        // if eliminate_foreigners(&mut state) {continue;}
 
         if check_conflict(&mut state) {
             result = -2;
@@ -58,9 +58,9 @@ pub fn solve_without_guesser(mut state: &mut [u16; 81], mut set_count: u8) -> i1
             set_count += changed;
             continue;
         }
-        // if eliminate_pagans(&mut state.0) {continue;}
         if elimnate_outsiders(&mut state) {continue;}
-        if eliminate_foreigners(&mut state) {continue;}
+        // if eliminate_pagans(&mut state) {continue;}
+        // if eliminate_foreigners(&mut state) {continue;}
         break;
     }
 
@@ -169,18 +169,60 @@ fn elimnate_outsiders(state: &mut [u16; 81]) -> bool{
 }
 
 
-
+// find pairs, triplets, etc. of candidates in a structure and remove them from other fields in the structure
 fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
     let mut changed = false;
-    for index in 0..81 {
-        if state[index] < CHECKING_NUM {
-            if state[index].count_ones() == 1 {
-                lock_field(state, index);
-                changed = true
+    for unit in ALL_UNITS {
+        let mut skip_fileds_list: Vec<usize> = vec![];
+        let struct_candidates: Vec<u16> = unit.iter().map(|&i| state[i]).collect();
+
+
+        // add set fields to skip list
+        for (field_index, field) in struct_candidates.iter().enumerate() {
+            if *field > helper::CHECKING_NUM {
+                skip_fileds_list.push(field_index);
             }
         }
-    }
+        // iterate start positions
+        for start_field in 0..9 {
+            // skip already checked fields
+            if !skip_fileds_list.contains(&start_field) {
+                skip_fileds_list.push(start_field);
+                let mut candidate_combination = struct_candidates[start_field];
+                let mut index = start_field;
+                let mut combined_fields_list: Vec<usize> = vec![start_field];
 
+                // create combintions
+                while skip_fileds_list.len() < 9 && index <= 8 {
+                    if skip_fileds_list.contains(&index) {
+                        index += 1;
+                        continue;
+                    }
+                    let tmp_combination = candidate_combination | struct_candidates[index];
+                    // combine
+                    if (tmp_combination ^ candidate_combination).count_ones() <= 1 {
+                        candidate_combination = tmp_combination;
+                        skip_fileds_list.push(index);
+                        combined_fields_list.push(index);
+                        index = start_field; // optimierbar
+                    } else {
+                        index += 1;
+                    }
+                }
+                if candidate_combination.count_ones() <= combined_fields_list.len() as u32 {
+                    // iterate fields not contained in group
+                    for field_index in 0..9 {
+                        let global_index = unit[field_index];
+                        if !combined_fields_list.contains(&field_index) && state[global_index] & candidate_combination != 0 {
+                            state[global_index] = (state[global_index] | candidate_combination)^candidate_combination;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+
+        }
+    }
     changed
 }
 

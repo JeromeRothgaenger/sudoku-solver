@@ -45,9 +45,7 @@ fn solve_one(index: usize) {
         display::display_candidates(&sudokus[index].0);
     }
 
-    if check_correct(&sudokus[index].0) {
-        println!("Sudoku {} is correct", index);
-    } else {
+    if !check_correct(&sudokus[index].0) {
         println!("Sudoku {} is wrong", index);
     }
 
@@ -74,12 +72,10 @@ fn solve_all() {
         if !check_correct(&sudokus[index].0) {
             display::display_fields(&sudokus[index].0);
             panic!("Sudoku {} is wrong", index);
-        } else {
-            println!("Sudoku {} is correct", index);
         }
     }
 
-    println!("Time elapsed: {:?}ms, avg time: {}mus", duration as f64/1000 as f64, duration/ PUZZEL_AMOUNT as u128);
+    println!("Time elapsed: {:?}ms, avg time: {:.3}mus", duration as f64/1000 as f64, duration as f64/ PUZZEL_AMOUNT as f64);
   
 }
 
