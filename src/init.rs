@@ -31,11 +31,13 @@ const CHARACTER_LOOKUP: [u8; 512] = {
 
 
 #[inline]
-fn parse_line(line: &[u8; 81]) -> [u16; 81] {
+fn parse_line(line: &[u8; 81]) -> ([u16; 81], u8) {
     let mut out = [CAND_ALL; 81];
+    let mut set_counter: u8 = 0;
     for i in 0..81 {
         let cell = BYTE_LOOKUP[line[i] as usize];
         if cell >= CHECKING_NUM {
+            set_counter += 1;
             out[i] = cell;
             let mask = !cell | FIXED_FLAG;
             for peer_index in PEERS[i] {
@@ -43,11 +45,11 @@ fn parse_line(line: &[u8; 81]) -> [u16; 81] {
             }
         }
     }
-    out
+    (out, set_counter)
 }
 
 
-pub(crate) fn load(path: &str) -> Vec<[u16; 81]> {
+pub(crate) fn load(path: &str) -> Vec<([u16; 81], u8)> {
     let bytes = fs::read(path).expect("Datei konnte nicht gelesen werden");
     let ind_of_first_nl = bytes.iter().position(|&b| b == b'\n').expect("found first newLine");
 

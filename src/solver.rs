@@ -9,27 +9,27 @@ use crate::helper::lock_field;
 const MAX_ITERATIONS: i16 = 100;
 
 
-pub(crate) fn solve(state: &mut [u16; 81]) -> i16 {
+pub(crate) fn solve(state: &mut ([u16; 81], u8)) -> i16 {
     let mut iteration :i16 = 0;
     let mut result = 0;
 
-    while !checker::check_finish(state) && iteration < MAX_ITERATIONS {
+    while state.1 < 81 && iteration < MAX_ITERATIONS {
         iteration += 1;
 
-        let mut changed = solve_orphan_prisoners(state);
-        if changed {continue;}
-        changed |= eliminate_pagans(state);
-        if changed {continue;}
-        changed = elimnate_outsiders(state);
-        if changed {continue;}
-        changed = eliminate_foreigners(state);
-        if changed {continue;}
+        let changed = solve_orphan_prisoners(&mut state.0);
+        if changed > 0 {
+            state.1 += changed;
+            continue;
+        }
+        if eliminate_pagans(&mut state.0) {continue;}
+        if elimnate_outsiders(&mut state.0) {continue;}
+        if eliminate_foreigners(&mut state.0) {continue;}
 
-        if check_conflict(state) {
+        if check_conflict(&mut state.0) {
             result = -2;
-            display_candidates(state);
+            display_candidates(&mut state.0);
             break;
-        } else if checker::check_correct(&state) {
+        } else if checker::check_correct(&state.0) {
             result = iteration;
             break;
         }
@@ -48,26 +48,26 @@ pub(crate) fn solve(state: &mut [u16; 81]) -> i16 {
     return result;
 }
 
-fn solve_without_guesser(state: &mut [u16; 81]) -> i16 {
+fn solve_without_guesser(state: &mut ([u16; 81], u8)) -> i16 {
     let mut iteration :i16 = 0;
 
     let mut result = 0;
-    while !checker::check_finish(state) && iteration < MAX_ITERATIONS {
+    while state.1 < 81 && iteration < MAX_ITERATIONS {
         iteration += 1;
 
-        let mut changed = solve_orphan_prisoners(state);
-        if changed {continue;}
-        changed |= eliminate_pagans(state);
-        if changed {continue;}
-        changed = elimnate_outsiders(state);
-        if changed {continue;}
-        changed = eliminate_foreigners(state);
-        if changed {continue;}
+        let changed = solve_orphan_prisoners(&mut state.0);
+        if changed > 0 {
+            state.1 += changed;
+            continue;
+        }
+        if eliminate_pagans(&mut state.0) {continue;}
+        if elimnate_outsiders(&mut state.0) {continue;}
+        if eliminate_foreigners(&mut state.0) {continue;}
 
-        if checker::check_correct(&state) {
+        if checker::check_correct(& state.0) {
             result = iteration;
             break;
-        }else if check_conflict(state) {
+        }else if check_conflict(&mut state.0) {
             result = -2;
             break;
         } else if iteration >= MAX_ITERATIONS {
@@ -81,8 +81,9 @@ fn solve_without_guesser(state: &mut [u16; 81]) -> i16 {
     return result;
 }
 
-fn solve_orphan_prisoners(state: &mut [u16; 81]) -> bool {
-    let mut changed = false;
+// orphans: only empty field in structure; prisoners: only possible field in a strucuture for a number
+fn solve_orphan_prisoners(state: &mut [u16; 81]) -> u8 {
+    let mut changed = 0;
     // rows
     for unit in ALL_UNITS {
         let mut appeared_once_buffer: u16 = 0b_00_0000_0000;
@@ -96,7 +97,7 @@ fn solve_orphan_prisoners(state: &mut [u16; 81]) -> bool {
 
                 if field.count_ones() == 1 { // Prüfbit nicht gesetzt --> noch keine eingetragene lösung
                     helper::lock_field(state, index);
-                    changed = true;
+                    changed += 1;
                 }
             }
         }
@@ -107,7 +108,7 @@ fn solve_orphan_prisoners(state: &mut [u16; 81]) -> bool {
             let field: u16 = state[index];
             if (field&only_once_mask).count_ones() == 1 { 
                 helper::set_field(state, index, field&only_once_mask);
-                changed = true;
+                changed += 1;
             }
         }
     }
@@ -117,6 +118,7 @@ fn solve_orphan_prisoners(state: &mut [u16; 81]) -> bool {
 
 
 // find and remove candidates which are needed in a different structure
+// TODO: unify?
 fn elimnate_outsiders_structure(state: &mut [u16; 81], struct_coord_list: [[usize; 9]; 9], pattern_coord_list: [[usize; 9]; 9], coord_conv: fn(usize, usize) -> usize) -> bool { // intersection removal and ?pointing?
     let mut changed = false;
     
@@ -288,26 +290,27 @@ fn eliminate_foreigners(state: &mut [u16; 81]) -> bool {
 
 
 
-fn guesser(state: &mut [u16; 81]) -> i16 {
-    for (index, field) in state.clone().iter().enumerate() {
+fn guesser(state: &mut ([u16; 81], u8)) -> i16 {
+    for (index, field) in state.0.clone().iter().enumerate() {
         if *field < helper::CHECKING_NUM {
             let mut states_generated = [0u16; 81];  //Buffer where all reached game states are ored together
             
-            let base_state = state.clone();
+            let base_state = state.0.clone();
             for candidate in 0..field.count_ones() as u8 {
                 let mut state_clone = base_state.clone();
                 let mask = helper::generate_mask(*field, candidate);
                 helper::set_field(&mut state_clone, index, mask);
 
-                let success = solve_without_guesser(&mut state_clone);
+                let success = solve_without_guesser(&mut (state_clone, state.1 + 1));
          
 
                 if success >= 0 {
-                    *state = state_clone;
+                    state.0 = state_clone;
+                    state.1 += 1;
                     return success;
 
                 } else if success == -2 {
-                    helper::remove_candidate(state, index, mask);
+                    helper::remove_candidate(&mut state.0, index, mask);
 
                 } else {
                     for fields_generated in 0..81 {
@@ -316,7 +319,7 @@ fn guesser(state: &mut [u16; 81]) -> i16 {
                 }
             }
             for fields_generated in 0..81 {
-                state[fields_generated] &= states_generated[fields_generated];
+                state.0[fields_generated] &= states_generated[fields_generated];
             }
         }
     }
