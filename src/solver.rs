@@ -29,7 +29,7 @@ pub(crate) fn solve(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
             set_count += changed;
             continue;
         }
-        // if elimnate_outsiders(&mut state) {continue;}
+        if elimnate_outsiders(&mut state) {continue;}
         if eliminate_pagans(&mut state) {continue;}
         // if eliminate_foreigners(&mut state) {continue;}
 
@@ -65,7 +65,7 @@ pub fn solve_without_guesser(mut state: &mut [u16; 81], mut set_count: u8) -> i1
             continue;
         }
     
-        // if elimnate_outsiders(&mut state) {continue;}
+        if elimnate_outsiders(&mut state) {continue;}
         if eliminate_pagans(&mut state) {continue;}
         // if eliminate_foreigners(&mut state) {continue;}
         break;
@@ -187,7 +187,7 @@ fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
 
                 // create combintions
                 while skip_fields_list.count_ones() < 9 && index <= 8 {
-                    if skip_fields_list & (1 << start_field) != 0 {
+                    if skip_fields_list & (1 << index) != 0 {
                         index += 1;
                         continue;
                     }
