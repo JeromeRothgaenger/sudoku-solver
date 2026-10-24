@@ -157,17 +157,17 @@ pub (crate) fn triple_xor(arr: &[u16; 3]) -> u16 {
 }
 
 // generate a mask with the candidate at index for a given field
-// TODO: replace with trailing zeros
 pub(crate) fn generate_mask(field: u16, index: u8) -> u16 {
     let mut counter = 0;
-    let mut mask = 0;
-    for i in 1..10 {
-        if field & (1 << i) != 0 {
-            counter += 1;
-            if counter == index + 1 {
-                mask = 1 << i;
-            }
+    let mut mask;
+    let mut combination = field;
+    while combination != 0 {
+        mask = 1 << combination.trailing_zeros();
+        if counter == index {
+            return mask;
         }
+        combination ^= mask;
+        counter += 1;
     }
-    mask
+    0
 }
