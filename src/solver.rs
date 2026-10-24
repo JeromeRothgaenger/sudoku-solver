@@ -1,16 +1,10 @@
 use crate::checker::check_conflict;
-use crate::display::display_fields;
 use crate::helper;
 use crate::checker;
 use crate::helper::ALL_UNITS;
 use crate::helper::ALL_STRUCTS_VER;
-use crate::helper::BLK_LIST;
-use crate::helper::BLK_LIST_VER;
 use crate::helper::CHECKING_NUM;
-use crate::helper::COL_LIST;
-use crate::helper::ROW_LIST;
 use crate::helper::STRUCT_PEERS;
-use crate::helper::lock_field;
 
 const MAX_ITERATIONS: i16 = 100;
 
@@ -33,13 +27,6 @@ pub(crate) fn solve(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
         if eliminate_pagans(&mut state) {continue;}
         // if eliminate_foreigners(&mut state) {continue;}
 
-        if check_conflict(&mut state) {
-            result = -2;
-            break;
-        } else if checker::check_correct(&state) {
-            result = iteration;
-            break;
-        }
         let guesser_result = guesser(&mut state, set_count);
         if guesser_result == 0 {
             continue;
@@ -47,9 +34,15 @@ pub(crate) fn solve(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
         result += guesser_result;
         break;
     }
-    if iteration >= MAX_ITERATIONS {
-        println!("Max number of iterations reached: {}", iteration);
-        result = -3;
+    #[cfg(debug_assertions)] {
+        if checker::check_correct(& state) {
+            return iteration;
+        } else if check_conflict(&mut state) {
+            return -2;
+        } else if iteration >= MAX_ITERATIONS {
+            println!("Max number of iterations reached: {}", iteration);
+            result = -3;
+        }
     }
     return result;
 }
@@ -66,7 +59,7 @@ pub fn solve_without_guesser(mut state: &mut [u16; 81], mut set_count: u8) -> i1
         }
     
         if elimnate_outsiders(&mut state) {continue;}
-        if eliminate_pagans(&mut state) {continue;}
+        // if eliminate_pagans(&mut state) {continue;}
         // if eliminate_foreigners(&mut state) {continue;}
         break;
     }
@@ -120,7 +113,6 @@ fn solve_orphan_prisoners(state: &mut [u16; 81]) -> u8 {
 
 // find and remove candidates which are needed in a different structure
 // equivalent to pointing pairs, pointing triples, box line reduction
-// TODO: unify?
 fn elimnate_outsiders(state: &mut [u16; 81]) -> bool { // intersection removal and ?pointing?
     let mut changed = false;
     let mut struct_index = 0;
@@ -308,17 +300,23 @@ fn eliminate_foreigners(state: &mut [u16; 81]) -> bool {
 
 
 
-fn guesser(state: &mut [u16; 81], mut set_count: u8) -> i16 {
-    for (index, field) in state.clone().iter().enumerate() {
-        if *field < helper::CHECKING_NUM {
+fn guesser(state: &mut [u16; 81], set_count: u8) -> i16 {
+    let mut field_indices = [0usize; 81];
+    for (i, slot) in field_indices.iter_mut().enumerate() {
+        *slot = i;
+    }
+    field_indices.sort_by_key(|&i| state[i].count_ones());
+    for field_index in field_indices {
+        let field = state[field_index];
+        if field < helper::CHECKING_NUM {
             let mut states_generated = [0u16; 81];  //Buffer where all reached game states are ored together
             
             let base_state = state.clone();
             for candidate_index in 0..field.count_ones() as u8 {
                 let mut state_clone = base_state.clone();
 
-                let mask = helper::generate_mask(*field, candidate_index);
-                helper::set_field(&mut state_clone, index, mask);
+                let mask = helper::generate_mask(field, candidate_index);
+                helper::set_field(&mut state_clone, field_index, mask);
                 
                 let success = solve_without_guesser(&mut state_clone, set_count + 1);
          
@@ -326,7 +324,7 @@ fn guesser(state: &mut [u16; 81], mut set_count: u8) -> i16 {
                     *state = state_clone;
                     return success;
                 } else if success == -2 {
-                    helper::remove_candidate(state, index, mask);
+                    helper::remove_candidate(state, field_index, mask);
                 } else {
                     for fields_generated in 0..81 {
                         states_generated[fields_generated] |= state_clone[fields_generated];
