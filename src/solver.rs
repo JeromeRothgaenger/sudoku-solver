@@ -1,4 +1,5 @@
 use crate::checker::check_conflict;
+use crate::display::display_fields;
 use crate::helper;
 use crate::checker;
 use crate::helper::ALL_UNITS;
@@ -23,9 +24,9 @@ pub(crate) fn solve(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
             set_count += changed;
             continue;
         }
-        if elimnate_outsiders(&mut state) {continue;}
+        // if elimnate_outsiders(&mut state) {continue;}
         // if eliminate_pagans(&mut state) {continue;}
-        // if eliminate_foreigners(&mut state) {continue;}
+        if eliminate_foreigners(&mut state) {continue;}
 
         if check_conflict(&mut state) {
             result = -2;
@@ -58,9 +59,10 @@ pub fn solve_without_guesser(mut state: &mut [u16; 81], mut set_count: u8) -> i1
             set_count += changed;
             continue;
         }
-        if elimnate_outsiders(&mut state) {continue;}
+    
+        // if elimnate_outsiders(&mut state) {continue;}
         // if eliminate_pagans(&mut state) {continue;}
-        // if eliminate_foreigners(&mut state) {continue;}
+        if eliminate_foreigners(&mut state) {continue;}
         break;
     }
 
@@ -170,31 +172,32 @@ fn elimnate_outsiders(state: &mut [u16; 81]) -> bool{
 
 
 // find pairs, triplets, etc. of candidates in a structure and remove them from other fields in the structure
+// equivalent to naked pairs, triplets, etc.
 fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
     let mut changed = false;
     for unit in ALL_UNITS {
-        let mut skip_fileds_list: Vec<usize> = vec![];
-        let struct_candidates: Vec<u16> = unit.iter().map(|&i| state[i]).collect();
+        let mut skip_fields_list: u16 = 0; // byte of fields that have already been checked for combinations
+        let struct_candidates: [u16; 9] = std::array::from_fn(|i| state[unit[i]]);
 
 
         // add set fields to skip list
-        for (field_index, field) in struct_candidates.iter().enumerate() {
-            if *field > helper::CHECKING_NUM {
-                skip_fileds_list.push(field_index);
+        for field_index in 0..9 {
+            if struct_candidates[field_index] > helper::CHECKING_NUM {
+                skip_fields_list |= 1 << field_index;
             }
         }
         // iterate start positions
         for start_field in 0..9 {
             // skip already checked fields
-            if !skip_fileds_list.contains(&start_field) {
-                skip_fileds_list.push(start_field);
+            if skip_fields_list & (1 << start_field) == 0 {
+                skip_fields_list |= 1 << start_field;
                 let mut candidate_combination = struct_candidates[start_field];
                 let mut index = start_field;
-                let mut combined_fields_list: Vec<usize> = vec![start_field];
+                let mut combined_fields_list: u16 = 0; // byte of fields that are part of the combination
 
                 // create combintions
-                while skip_fileds_list.len() < 9 && index <= 8 {
-                    if skip_fileds_list.contains(&index) {
+                while skip_fields_list.count_ones() < 9 && index <= 8 {
+                    if skip_fields_list & (1 << start_field) != 0 {
                         index += 1;
                         continue;
                     }
@@ -202,18 +205,18 @@ fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
                     // combine
                     if (tmp_combination ^ candidate_combination).count_ones() <= 1 {
                         candidate_combination = tmp_combination;
-                        skip_fileds_list.push(index);
-                        combined_fields_list.push(index);
+                        skip_fields_list |= 1 << index;
+                        combined_fields_list |= 1 << index;
                         index = start_field; // optimierbar
                     } else {
                         index += 1;
                     }
                 }
-                if candidate_combination.count_ones() <= combined_fields_list.len() as u32 {
+                if candidate_combination.count_ones() <= combined_fields_list.count_ones() as u32 {
                     // iterate fields not contained in group
                     for field_index in 0..9 {
                         let global_index = unit[field_index];
-                        if !combined_fields_list.contains(&field_index) && state[global_index] & candidate_combination != 0 {
+                        if !combined_fields_list & (1 << field_index) != 0 && state[global_index] & candidate_combination != 0 {
                             state[global_index] = (state[global_index] | candidate_combination)^candidate_combination;
                             changed = true;
                         }
@@ -249,13 +252,12 @@ fn read_vertically_u16(words: &[u16]) -> [u16; NUM_COLS] {
     cols
 }
 
-
-fn eliminate_foreigners_structure(state: &mut [u16; 81], coord_list: [[usize; 9]; 9]) -> bool {
+// equivalent to hidden pairs, triplets, etc.
+fn eliminate_foreigners(state: &mut [u16; 81]) -> bool {
     let mut changed = false;
-    for i in 0..9 {
-        let struct_coords = coord_list[i];
-        let skip_candidates_list: Vec<usize> = vec![];
-        let struct_candidates: [u16; 9] = std::array::from_fn(|i| state[struct_coords[i]]);
+    for unit in ALL_UNITS {
+        let skip_candidates_list: u16 = 0; // byte of candidates that have already been checked for combinations
+        let struct_candidates: [u16; 9] = std::array::from_fn(|i| state[unit[i]]);
 
         // one byte for every number, 1 if the field corresponding to the bit position can contain the number
         let struct_candidate_fields = read_vertically_u16(&struct_candidates);
@@ -264,16 +266,16 @@ fn eliminate_foreigners_structure(state: &mut [u16; 81], coord_list: [[usize; 9]
         // iterate candidates
         for start_candidate in 1..10 {
             // skip already checked candidates
-            if !skip_candidates_list.contains(&start_candidate) {
+            if skip_candidates_list & (1 << start_candidate) == 0 {
                 let mut skip_list_copy = skip_candidates_list.clone();
-                skip_list_copy.push(start_candidate);
+                skip_list_copy |= 1 << start_candidate;
                 let mut field_candidate_combination = struct_candidate_fields[start_candidate - 1];
                 let mut candidate = start_candidate;
                 let mut candidate_combination: u16 = 1 << start_candidate;
 
                 // create combinations
-                while skip_list_copy.len() < 9 && candidate <= 9 && candidate_combination.count_ones() < field_candidate_combination.count_ones(){
-                    if skip_list_copy.contains(&candidate) {
+                while skip_list_copy.count_ones() < 9 && candidate <= 9 && candidate_combination.count_ones() < field_candidate_combination.count_ones(){
+                    if skip_list_copy & (1 << candidate) != 0 {
                         candidate += 1;
                         continue;
                     }
@@ -281,7 +283,7 @@ fn eliminate_foreigners_structure(state: &mut [u16; 81], coord_list: [[usize; 9]
                     // combine
                     if (tmp_combination ^ field_candidate_combination).count_ones() <= 1 {
                         field_candidate_combination = tmp_combination;
-                        skip_list_copy.push(candidate);
+                        skip_list_copy |= 1 << candidate;
                         candidate_combination |= 1 << candidate;
                         candidate = start_candidate; // optimierbar
                     } else {
@@ -302,7 +304,7 @@ fn eliminate_foreigners_structure(state: &mut [u16; 81], coord_list: [[usize; 9]
                     
                     // iterate candidates
                     for field_index in affected_fields {
-                        let global_index = struct_coords[field_index];
+                        let global_index = unit[field_index];
                         if state[global_index] < helper::CHECKING_NUM && state[global_index].count_ones() > number_of_affected_candidates {
                             state[global_index] &=  candidate_combination;
                             changed = true;
@@ -313,15 +315,6 @@ fn eliminate_foreigners_structure(state: &mut [u16; 81], coord_list: [[usize; 9]
 
         }
     }
-    changed
-}
-
-fn eliminate_foreigners(state: &mut [u16; 81]) -> bool {
-    let mut changed = false;
-    // rows
-    changed |= eliminate_foreigners_structure(state, helper::ROW_LIST);
-    changed |= eliminate_foreigners_structure(state, helper::COL_LIST);
-    changed |= eliminate_foreigners_structure(state, helper::BLK_LIST);
     changed
 }
 
@@ -337,17 +330,15 @@ fn guesser(state: &mut [u16; 81], mut set_count: u8) -> i16 {
                 let mut state_clone = base_state.clone();
 
                 let mask = helper::generate_mask(*field, candidate_index);
-                helper::set_field(&mut state_clone, index, mask);                
+                helper::set_field(&mut state_clone, index, mask);
                 
                 let success = solve_without_guesser(&mut state_clone, set_count + 1);
          
                 if success >= 0 {
                     *state = state_clone;
                     return success;
-
                 } else if success == -2 {
                     helper::remove_candidate(state, index, mask);
-
                 } else {
                     for fields_generated in 0..81 {
                         states_generated[fields_generated] |= state_clone[fields_generated];
