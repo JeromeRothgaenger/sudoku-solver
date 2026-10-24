@@ -1,5 +1,4 @@
 use crate::checker::check_conflict;
-use crate::display::display_candidates;
 use crate::helper;
 use crate::checker;
 use crate::helper::ALL_UNITS;
@@ -9,31 +8,33 @@ use crate::helper::lock_field;
 const MAX_ITERATIONS: i16 = 100;
 
 
-pub(crate) fn solve(state: &mut ([u16; 81], u8)) -> i16 {
+
+//TODO: cleanup code so it matches with solve_without_guesser()
+pub(crate) fn solve(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
     let mut iteration :i16 = 0;
     let mut result = 0;
 
-    while state.1 < 81 && iteration < MAX_ITERATIONS {
+    while set_count < 81 && iteration < MAX_ITERATIONS {
         iteration += 1;
 
-        let changed = solve_orphan_prisoners(&mut state.0);
+        
+        let changed = solve_orphan_prisoners(&mut state);
         if changed > 0 {
-            state.1 += changed;
+            set_count += changed;
             continue;
         }
-        if eliminate_pagans(&mut state.0) {continue;}
-        if elimnate_outsiders(&mut state.0) {continue;}
-        if eliminate_foreigners(&mut state.0) {continue;}
+        // if eliminate_pagans(&mut state.0) {continue;}
+        if elimnate_outsiders(&mut state) {continue;}
+        if eliminate_foreigners(&mut state) {continue;}
 
-        if check_conflict(&mut state.0) {
+        if check_conflict(&mut state) {
             result = -2;
-            display_candidates(&mut state.0);
             break;
-        } else if checker::check_correct(&state.0) {
+        } else if checker::check_correct(&state) {
             result = iteration;
             break;
         }
-        let guesser_result = guesser(state);
+        let guesser_result = guesser(&mut state, set_count);
         if guesser_result == 0 {
             continue;
         } 
@@ -44,72 +45,66 @@ pub(crate) fn solve(state: &mut ([u16; 81], u8)) -> i16 {
         println!("Max number of iterations reached: {}", iteration);
         result = -3;
     }
-    //display_candidates(state);
     return result;
 }
 
-fn solve_without_guesser(state: &mut ([u16; 81], u8)) -> i16 {
+pub fn solve_without_guesser(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
     let mut iteration :i16 = 0;
 
-    let mut result = 0;
-    while state.1 < 81 && iteration < MAX_ITERATIONS {
+    while set_count < 81 && iteration < MAX_ITERATIONS {
         iteration += 1;
-
-        let changed = solve_orphan_prisoners(&mut state.0);
+        let changed = solve_orphan_prisoners(&mut state);
         if changed > 0 {
-            state.1 += changed;
+            set_count += changed;
             continue;
         }
-        if eliminate_pagans(&mut state.0) {continue;}
-        if elimnate_outsiders(&mut state.0) {continue;}
-        if eliminate_foreigners(&mut state.0) {continue;}
-
-        if checker::check_correct(& state.0) {
-            result = iteration;
-            break;
-        }else if check_conflict(&mut state.0) {
-            result = -2;
-            break;
-        } else if iteration >= MAX_ITERATIONS {
-            println!("Max number of iterations reached: {}", iteration);
-            result = -3;
-        } else {
-            result = -1;
-            break;
-        }
+        // if eliminate_pagans(&mut state.0) {continue;}
+        if elimnate_outsiders(&mut state) {continue;}
+        if eliminate_foreigners(&mut state) {continue;}
+        break;
     }
-    return result;
+
+    if checker::check_correct(& state) {
+        return iteration;
+    }else if check_conflict(&mut state) {
+        return -2;
+    } else if iteration >= MAX_ITERATIONS {
+        println!("Max number of iterations reached: {}", iteration);
+        return -3;
+    } else {
+        return -1;
+    }
 }
 
 // orphans: only empty field in structure; prisoners: only possible field in a strucuture for a number
 fn solve_orphan_prisoners(state: &mut [u16; 81]) -> u8 {
     let mut changed = 0;
-    // rows
+    // orphans: only empty field in structure
     for unit in ALL_UNITS {
-        let mut appeared_once_buffer: u16 = 0b_00_0000_0000;
+        let mut appeared_buffer: u16 = 0b_00_0000_0000; // list of every number that has appeared in the candidates
         let mut appeared_multiple_buffer: u16 = 0b_00_0000_0000;
         
         for index in unit {
             let field: u16 = state[index];
-            if field < helper::CHECKING_NUM { // Prüfbit nicht gesetzt --> noch keine eingetragene lösung
-                appeared_multiple_buffer |= appeared_once_buffer & field;
-                appeared_once_buffer |= field;
-
-                if field.count_ones() == 1 { // Prüfbit nicht gesetzt --> noch keine eingetragene lösung
+            if field < helper::CHECKING_NUM { // field is not set yet
+                if field.count_ones() == 1 { // only one candidate left, set it
                     helper::lock_field(state, index);
                     changed += 1;
+                } else {
+                    appeared_multiple_buffer |= appeared_buffer & field;
+                    appeared_buffer |= field;
                 }
             }
         }
 
-        let only_once_mask = appeared_once_buffer & !appeared_multiple_buffer;
+        let only_once_mask = appeared_buffer & !appeared_multiple_buffer; // contains candidates that appeared exactly once
 
+        // prisoner: fields which are the only possible location for a number in a structure
         for index in unit {
             let field: u16 = state[index];
-            if (field&only_once_mask).count_ones() == 1 { 
+            if field < CHECKING_NUM && (field&only_once_mask).count_ones() == 1 { 
                 helper::set_field(state, index, field&only_once_mask);
-                changed += 1;
-            }
+                changed += 1;            }
         }
     }
     
@@ -290,27 +285,26 @@ fn eliminate_foreigners(state: &mut [u16; 81]) -> bool {
 
 
 
-fn guesser(state: &mut ([u16; 81], u8)) -> i16 {
-    for (index, field) in state.0.clone().iter().enumerate() {
+fn guesser(state: &mut [u16; 81], mut set_count: u8) -> i16 {
+    for (index, field) in state.clone().iter().enumerate() {
         if *field < helper::CHECKING_NUM {
             let mut states_generated = [0u16; 81];  //Buffer where all reached game states are ored together
             
-            let base_state = state.0.clone();
-            for candidate in 0..field.count_ones() as u8 {
+            let base_state = state.clone();
+            for candidate_index in 0..field.count_ones() as u8 {
                 let mut state_clone = base_state.clone();
-                let mask = helper::generate_mask(*field, candidate);
-                helper::set_field(&mut state_clone, index, mask);
 
-                let success = solve_without_guesser(&mut (state_clone, state.1 + 1));
+                let mask = helper::generate_mask(*field, candidate_index);
+                helper::set_field(&mut state_clone, index, mask);                
+                
+                let success = solve_without_guesser(&mut state_clone, set_count + 1);
          
-
                 if success >= 0 {
-                    state.0 = state_clone;
-                    state.1 += 1;
+                    *state = state_clone;
                     return success;
 
                 } else if success == -2 {
-                    helper::remove_candidate(&mut state.0, index, mask);
+                    helper::remove_candidate(state, index, mask);
 
                 } else {
                     for fields_generated in 0..81 {
@@ -319,7 +313,7 @@ fn guesser(state: &mut ([u16; 81], u8)) -> i16 {
                 }
             }
             for fields_generated in 0..81 {
-                state.0[fields_generated] &= states_generated[fields_generated];
+                state[fields_generated] &= states_generated[fields_generated];
             }
         }
     }

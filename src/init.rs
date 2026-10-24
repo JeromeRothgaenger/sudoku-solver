@@ -65,14 +65,14 @@ pub(crate) fn load(path: &str) -> Vec<([u16; 81], u8)> {
 
 
 
-pub(crate) fn store(path: &str, sudokus: &[[u16; 81]]) {
+pub(crate) fn store(path: &str, sudokus: &[([u16; 81], u8)]) {
     let mut out = Vec::with_capacity(16 + sudokus.len() * LINE_SIZE);
 
     out.extend_from_slice(sudokus.len().to_string().as_bytes());
     out.push(b'\n');
 
     for sudoku in sudokus {
-        for cell in sudoku {
+        for cell in sudoku.0 {
             out.push(CHARACTER_LOOKUP[(cell & CAND_ALL) as usize & 511]);
         }
         out.push(b'\n');
