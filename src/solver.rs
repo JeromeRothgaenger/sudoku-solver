@@ -3,11 +3,16 @@ use crate::display::display_fields;
 use crate::helper;
 use crate::checker;
 use crate::helper::ALL_UNITS;
+use crate::helper::ALL_STRUCTS_VER;
+use crate::helper::BLK_LIST;
+use crate::helper::BLK_LIST_VER;
 use crate::helper::CHECKING_NUM;
+use crate::helper::COL_LIST;
+use crate::helper::ROW_LIST;
+use crate::helper::STRUCT_PEERS;
 use crate::helper::lock_field;
 
 const MAX_ITERATIONS: i16 = 100;
-
 
 
 //TODO: cleanup code so it matches with solve_without_guesser()
@@ -25,8 +30,8 @@ pub(crate) fn solve(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
             continue;
         }
         // if elimnate_outsiders(&mut state) {continue;}
-        // if eliminate_pagans(&mut state) {continue;}
-        if eliminate_foreigners(&mut state) {continue;}
+        if eliminate_pagans(&mut state) {continue;}
+        // if eliminate_foreigners(&mut state) {continue;}
 
         if check_conflict(&mut state) {
             result = -2;
@@ -61,8 +66,8 @@ pub fn solve_without_guesser(mut state: &mut [u16; 81], mut set_count: u8) -> i1
         }
     
         // if elimnate_outsiders(&mut state) {continue;}
-        // if eliminate_pagans(&mut state) {continue;}
-        if eliminate_foreigners(&mut state) {continue;}
+        if eliminate_pagans(&mut state) {continue;}
+        // if eliminate_foreigners(&mut state) {continue;}
         break;
     }
 
@@ -113,20 +118,18 @@ fn solve_orphan_prisoners(state: &mut [u16; 81]) -> u8 {
     changed
 }
 
-
 // find and remove candidates which are needed in a different structure
+// equivalent to pointing pairs, pointing triples, box line reduction
 // TODO: unify?
-fn elimnate_outsiders_structure(state: &mut [u16; 81], struct_coord_list: [[usize; 9]; 9], pattern_coord_list: [[usize; 9]; 9], coord_conv: fn(usize, usize) -> usize) -> bool { // intersection removal and ?pointing?
+fn elimnate_outsiders(state: &mut [u16; 81]) -> bool { // intersection removal and ?pointing?
     let mut changed = false;
-    
-    for struct_index in 0..9 {
+    let mut struct_index = 0;
+
+    for structure in ALL_STRUCTS_VER {
 
         // get candidate list for struct and combine triples
-        let mut block_candidates = [0u16; 9];
-        for (local_index, global_index) in struct_coord_list[struct_index].iter().enumerate() {
-            block_candidates[local_index] = state[*global_index]
-        }
-        let combined_triples = helper::combine_triples(&block_candidates);
+        let structure_candidates = std::array::from_fn(|i| state[structure[i]]);
+        let combined_triples = helper::combine_triples(&structure_candidates);
         let mut candidates_occuring_in_one_triple = helper::triple_xor(&combined_triples);
  
         
@@ -138,35 +141,22 @@ fn elimnate_outsiders_structure(state: &mut [u16; 81], struct_coord_list: [[usiz
 
             // find location of affected number by searching through the three combined candidates
             for triple in 0..3 {
-                if (combined_triples[triple] >> num) & 1 != 0{
+                if combined_triples[triple] & (1 << num) != 0{
                     // remove candidates
-                    for field_index in pattern_coord_list[coord_conv(struct_index, triple)] {
-                        if !(struct_coord_list[struct_index].contains(&field_index)) && state[field_index] & mask != 0 {
-                            helper::remove_candidate(state, field_index, mask);
+                    let affected_fields = STRUCT_PEERS[struct_index * 3 + triple];
+                    for field in affected_fields {
+                        if state[field as usize] & mask != 0 {
+                            helper::remove_candidate(state, field as usize, mask);
                             changed = true;
                         }
                     }
                 }
             }
             candidates_occuring_in_one_triple ^= mask;
+            
         }
+        struct_index += 1;
     }
-    changed
-}
-
-fn elimnate_outsiders(state: &mut [u16; 81]) -> bool{
-    fn blk_to_row(struct_index: usize,triple: usize) -> usize {(struct_index/3)*3 + triple}
-    fn blk_to_col(struct_index: usize,triple: usize) -> usize {(struct_index%3)*3 + triple}
-    fn row_to_blk(struct_index: usize,triple: usize) -> usize {(struct_index/3)*3 + triple}
-    fn col_to_blk(struct_index: usize,triple: usize) -> usize {struct_index/3 + triple * 3}
-
-    let mut changed = false;
-
-    changed |= elimnate_outsiders_structure(state, helper::BLK_LIST, helper::ROW_LIST, blk_to_row);
-    changed |= elimnate_outsiders_structure(state, helper::BLK_LIST_VER, helper::COL_LIST, blk_to_col);
-    changed |= elimnate_outsiders_structure(state, helper::ROW_LIST, helper::BLK_LIST, row_to_blk);
-    changed |= elimnate_outsiders_structure(state, helper::COL_LIST, helper::BLK_LIST, col_to_blk);
-
     changed
 }
 
@@ -193,7 +183,7 @@ fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
                 skip_fields_list |= 1 << start_field;
                 let mut candidate_combination = struct_candidates[start_field];
                 let mut index = start_field;
-                let mut combined_fields_list: u16 = 0; // byte of fields that are part of the combination
+                let mut combined_fields_list: u16 = 1 << start_field; // byte of fields that are part of the combination
 
                 // create combintions
                 while skip_fields_list.count_ones() < 9 && index <= 8 {
@@ -216,7 +206,8 @@ fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
                     // iterate fields not contained in group
                     for field_index in 0..9 {
                         let global_index = unit[field_index];
-                        if !combined_fields_list & (1 << field_index) != 0 && state[global_index] & candidate_combination != 0 {
+                        
+                        if combined_fields_list & (1 << field_index) == 0  && state[global_index] & candidate_combination != 0{
                             state[global_index] = (state[global_index] | candidate_combination)^candidate_combination;
                             changed = true;
                         }
@@ -296,19 +287,16 @@ fn eliminate_foreigners(state: &mut [u16; 81]) -> bool {
 
                 if number_of_affected_candidates == number_of_affected_fields && number_of_affected_candidates > 1 {
                     // find fields where foreigners need to be eliminated
-                    let mut affected_fields = Vec::with_capacity(field_candidate_combination.count_ones() as usize);
-                    while field_candidate_combination != 0 {
-                        affected_fields.push(8 - (field_candidate_combination.trailing_zeros()) as usize);
-                        field_candidate_combination &= field_candidate_combination - 1;
-                    }
                     
                     // iterate candidates
-                    for field_index in affected_fields {
-                        let global_index = unit[field_index];
+                    while field_candidate_combination != 0 {
+                        let structure_index = 8-field_candidate_combination.trailing_zeros();
+                        let global_index = unit[structure_index as usize];
                         if state[global_index] < helper::CHECKING_NUM && state[global_index].count_ones() > number_of_affected_candidates {
                             state[global_index] &=  candidate_combination;
                             changed = true;
                         }
+                        field_candidate_combination &= field_candidate_combination - 1;
                     }
                 }
             }
