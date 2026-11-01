@@ -1,2 +1,5 @@
 /target
 hurensohn
+analyze.txt
+perf.data
+cachegrind.*

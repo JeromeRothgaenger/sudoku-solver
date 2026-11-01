@@ -31,7 +31,7 @@ const CHARACTER_LOOKUP: [u8; 512] = {
 
 
 #[inline]
-fn parse_line(line: &[u8; 81]) -> ([u16; 81], u8) {
+pub fn parse_line(line: &[u8; 81]) -> ([u16; 81], u8) {
     let mut out = [CAND_ALL; 81];
     let mut set_counter: u8 = 0;
     for i in 0..81 {

@@ -8,3 +8,6 @@ rayon = "1"
 
 [build]
 rustflags = ["-C", "target-cpu=native"]
+
+[profile.release]
+debug = true
