@@ -1,7 +1,7 @@
 use crate::checker::check_conflict;
 use crate::helper;
 use crate::checker;
-use crate::helper::ALL_UNITS;
+use crate::helper::ALL_STRUCTS;
 use crate::helper::ALL_STRUCTS_VER;
 use crate::helper::CHECKING_NUM;
 use crate::helper::STRUCT_PEERS;
@@ -28,7 +28,7 @@ pub(crate) fn solve(mut state: &mut [u16; 81], mut set_count: u8) -> i16 {
         }
         if elimnate_outsiders(&mut state) {continue;}
         if eliminate_pagans(&mut state) {continue;}
-        if eliminate_foreigners(&mut state) {continue;}
+        // if eliminate_foreigners(&mut state) {continue;}
         let guesser_result = guesser(&mut state, set_count);
         if guesser_result == 0 {
             continue;
@@ -102,11 +102,11 @@ fn solve_orphans(state: &mut [u16; 81]) -> u8 {
 // prisoner: fields which are the only possible location for a number in a structure
 fn solve_prisoners(state: &mut [u16; 81]) -> u8 {
     let mut changed = 0;
-    for unit in ALL_UNITS {
+    for structure in ALL_STRUCTS {
         let mut appeared_buffer: u16 = 0b_00_0000_0000; // list of every number that has appeared in the candidates
         let mut appeared_multiple_buffer: u16 = 0b_00_0000_0000;
         
-        for index in unit {
+        for index in structure {
             let field: u16 = state[index];
             if field < helper::CHECKING_NUM { // field is not set yet
                 appeared_multiple_buffer |= appeared_buffer & field;
@@ -115,13 +115,14 @@ fn solve_prisoners(state: &mut [u16; 81]) -> u8 {
         }
 
         let only_once_mask = appeared_buffer & !appeared_multiple_buffer; // contains candidates that appeared exactly once
+        if only_once_mask == 0 {continue;} // no candidates appeared only once, skip to next structure
 
-
-        for index in unit {
+        for index in structure {
             let field: u16 = state[index];
-            if field < CHECKING_NUM && (field&only_once_mask).count_ones() == 1 { 
-                helper::set_field(state, index, field&only_once_mask);
-                changed += 1;            
+            let combined_mask = field & only_once_mask;
+            if combined_mask != 0 { // field contains a candidate that appeared only once in the structure
+                helper::set_field(state, index, combined_mask);
+                changed += 1;
             }
         }
     }
@@ -174,9 +175,9 @@ fn elimnate_outsiders(state: &mut [u16; 81]) -> bool { // intersection removal a
 // equivalent to naked pairs, triplets, etc.
 fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
     let mut changed = false;
-    for unit in ALL_UNITS {
+    for structure in ALL_STRUCTS {
         let mut skip_fields_list: u16 = 0; // byte of fields that have already been checked for combinations
-        let struct_candidates: [u16; 9] = std::array::from_fn(|i| state[unit[i]]);
+        let struct_candidates: [u16; 9] = std::array::from_fn(|i| state[structure[i]]);
 
 
         // add set fields to skip list
@@ -214,7 +215,7 @@ fn eliminate_pagans(state: &mut [u16; 81]) -> bool {
                 if candidate_combination.count_ones() <= combined_fields_list.count_ones() as u32 {
                     // iterate fields not contained in group
                     for field_index in 0..9 {
-                        let global_index = unit[field_index];
+                        let global_index = structure[field_index];
                         
                         if combined_fields_list & (1 << field_index) == 0  && state[global_index] & candidate_combination != 0{
                             state[global_index] = (state[global_index] | candidate_combination)^candidate_combination;
@@ -255,9 +256,9 @@ fn read_vertically_u16(words: &[u16]) -> [u16; NUM_COLS] {
 // equivalent to hidden pairs, triplets, etc.
 fn eliminate_foreigners(state: &mut [u16; 81]) -> bool {
     let mut changed = false;
-    for unit in ALL_UNITS {
+    for structure in ALL_STRUCTS {
         let skip_candidates_list: u16 = 0; // byte of candidates that have already been checked for combinations
-        let struct_candidates: [u16; 9] = std::array::from_fn(|i| state[unit[i]]);
+        let struct_candidates: [u16; 9] = std::array::from_fn(|i| state[structure[i]]);
 
         // one byte for every number, 1 if the field corresponding to the bit position can contain the number
         let struct_candidate_fields = read_vertically_u16(&struct_candidates);
@@ -300,7 +301,7 @@ fn eliminate_foreigners(state: &mut [u16; 81]) -> bool {
                     // iterate candidates
                     while field_candidate_combination != 0 {
                         let structure_index = 8-field_candidate_combination.trailing_zeros();
-                        let global_index = unit[structure_index as usize];
+                        let global_index = structure[structure_index as usize];
                         if state[global_index] < helper::CHECKING_NUM && state[global_index].count_ones() > number_of_affected_candidates {
                             state[global_index] &=  candidate_combination;
                             changed = true;

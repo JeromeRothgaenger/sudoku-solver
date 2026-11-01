@@ -36,7 +36,7 @@ pub fn parse_line(line: &[u8; 81]) -> ([u16; 81], u8) {
     let mut set_counter: u8 = 0;
     for i in 0..81 {
         let cell = BYTE_LOOKUP[line[i] as usize];
-        if cell >= CHECKING_NUM {
+        if line[i] != b'0' {
             set_counter += 1;
             out[i] = cell;
             let mask = !cell | FIXED_FLAG;
